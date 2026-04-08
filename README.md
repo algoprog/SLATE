@@ -1,8 +1,6 @@
 # SLATE: Step-Level Advantage Estimation for Truncated Exploration
 
-Official code for the paper:
-
-> **Truncated Step-Level Sampling with Process Rewards for Retrieval-Augmented Reasoning**
+[![arxiv](https://img.shields.io/badge/arXiv-2602.23440-b31b1b.svg)](https://arxiv.org/abs/2602.23440)
 
 SLATE is a training framework for retrieval-augmented LLM reasoning that addresses the credit assignment problem in multi-step search trajectories through two complementary innovations:
 
