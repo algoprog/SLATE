@@ -1,0 +1,180 @@
+# SLATE: Step-Level Advantage estimation for Truncated Exploration
+# Config for SLATE training with truncated step-level sampling and LLM-judge rewards.
+
+defaults:
+  - actor@actor_rollout_ref.actor: dp_actor
+  - data@data: legacy_data
+  - reward_manager@reward_manager
+  - ref@actor_rollout_ref.ref: dp_ref
+  - rollout@actor_rollout_ref.rollout: rollout
+  - model@actor_rollout_ref.model: hf_model
+  - critic@critic: dp_critic
+  - reward_model@reward_model: dp_reward_loop
+  - algorithm@algorithm.rollout_correction: rollout_correction
+  - _self_
+
+# SLATE-specific configuration
+slate:
+  # Number of candidate actions per step (k in paper)
+  k: 5
+  # Sampling temperature for reward-weighted action selection (eta in paper)
+  eta: 0.7
+  # Maximum action budget (B in paper)
+  max_budget: 4
+  # Early-termination bonus coefficient (lambda in paper)
+  lambda_bonus: 0.1
+  # LLM judge server URL
+  judge_url: "http://localhost:9000/generate"
+  # LLM judge temperature (0 = deterministic)
+  judge_temperature: 0.0
+
+# Actor, rollout, and reference model config
+actor_rollout_ref:
+  hybrid_engine: true
+  nccl_timeout: 600
+
+  model:
+    path: Qwen/Qwen2.5-7B
+    enable_gradient_checkpointing: true
+    use_remove_padding: true
+    # LoRA config (rank 16, alpha 64 as in paper)
+    lora_rank: 16
+    lora_alpha: 64
+    target_modules: all-linear
+
+  actor:
+    optim:
+      lr: 1e-6
+      lr_warmup_steps_ratio: 0.285
+    use_kl_loss: true
+    kl_loss_coef: 0.001
+    kl_loss_type: low_var_kl
+    ppo_mini_batch_size: 32
+    ppo_micro_batch_size: 8
+    ppo_clip_eps: 0.2
+    state_masking: true
+    fsdp_config:
+      param_offload: true
+      grad_offload: true
+      optimizer_offload: true
+
+  rollout:
+    name: vllm
+    mode: async
+    gpu_memory_utilization: 0.6
+    tensor_model_parallel_size: 1
+    log_prob_micro_batch_size: 128
+    temperature: 1.0
+    # SLATE uses k=1 agent (step-level sampling is internal)
+    n_agent: 1
+
+  ref:
+    log_prob_micro_batch_size: 128
+    fsdp_config:
+      param_offload: true
+
+# Custom reward function (EM for validation; SLATE uses LLM judge during rollout)
+custom_reward_function:
+  path: slate/rewards/em_reward.py
+  name: compute_score
+
+# Algorithm config
+algorithm:
+  _target_: verl.trainer.config.AlgoConfig
+  # Training mode: 'slate' or 'searchr1'
+  training_mode: slate
+  gamma: 1.0
+  lam: 1.0
+  adv_estimator: grpo
+  norm_adv_by_std_in_grpo: true
+  use_kl_in_reward: false
+  kl_penalty: kl
+  no_think_rl: false
+  kl_ctrl:
+    _target_: verl.trainer.config.KLControlConfig
+    type: fixed
+    kl_coef: 0.001
+    horizon: 10000
+    target_kl: 0.1
+  use_pf_ppo: false
+
+# Data config
+data:
+  train_files: data/nq_hotpotqa_train/train.parquet
+  val_files: data/nq_hotpotqa_train/test.parquet
+  train_data_num: null
+  val_data_num: null
+  train_batch_size: 32
+  val_batch_size: 64
+  max_prompt_length: 4096
+  max_response_length: 500
+  max_start_length: 2048
+  max_obs_length: 500
+  shuffle_train_dataloader: true
+
+# Retrieval config
+retriever:
+  url: "http://127.0.0.1:8000/retrieve"
+  topk: 3
+
+# Max search turns
+max_turns: 4
+
+# Trainer config
+trainer:
+  balance_batch: true
+  total_epochs: 15
+  total_training_steps: 500
+  project_name: SLATE
+  experiment_name: slate-qwen2.5-7b
+  logger: ["wandb"]
+  nnodes: 1
+  n_gpus_per_node: 2
+  save_freq: 100
+  test_freq: 100
+  val_before_train: true
+  val_only: false
+  resume_mode: auto
+  default_hdfs_dir: null
+  default_local_dir: checkpoints/${trainer.project_name}/${trainer.experiment_name}
+  device: cuda
+  use_legacy_worker_impl: auto
+
+# Profiler
+global_profiler:
+  _target_: verl.utils.profiler.ProfilerConfig
+  tool: null
+  steps: null
+  profile_continuous_steps: false
+  save_path: "outputs/profile"
+  global_tool_config:
+    nsys:
+      _target_: verl.utils.profiler.config.NsightToolConfig
+      discrete: false
+      controller_nsight_options:
+        trace: "cuda,nvtx,cublas,ucx"
+        cuda-memory-usage: "true"
+        cuda-graph-trace: "graph"
+      worker_nsight_options:
+        trace: "cuda,nvtx,cublas,ucx"
+        cuda-memory-usage: "true"
+        cuda-graph-trace: "graph"
+        capture-range: "cudaProfilerApi"
+        capture-range-end: null
+        kill: none
+    torch_memory:
+      trace_alloc_max_entries: 100000
+      stack_depth: 32
+      context: "all"
+      stacks: "all"
+      kw_args: {}
+
+# TransferQueue
+transfer_queue:
+  enable: false
+
+# Ray
+ray_kwargs:
+  ray_init:
+    num_cpus: null
+  timeline_json_file: null

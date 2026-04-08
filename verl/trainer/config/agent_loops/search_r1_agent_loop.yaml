@@ -1,0 +1,6 @@
+# Agent loop configuration for Search R1
+# This uses the custom SearchR1AgentLoop that integrates search_r1 logic
+
+- name: search_r1_agent
+  _target_: verl.experimental.agent_loop.search_r1_agent_loop.SearchR1AgentLoop
+

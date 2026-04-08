@@ -1,0 +1,12 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "slate-rl"
+version = "0.1.0"
+description = "SLATE: Step-Level Advantage estimation for Truncated Exploration"
+readme = "README.md"
+license = {text = "CC-BY-NC-SA-4.0"}
+requires-python = ">=3.10"
+authors = []
